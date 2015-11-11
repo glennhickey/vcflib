@@ -1,6 +1,7 @@
 #include "Variant.h"
 #include <getopt.h>
 #include "fastahack/Fasta.h"
+#include "BedReader.h"
 #include <algorithm>
 #include <list>
 #include <set>
@@ -17,6 +18,9 @@ void printSummary(char** argv) {
          << "    -w, --window-size N     Merge variants at most this many bp apart (default 30)" << endl
          << "    -o, --only-variants     Don't output the entire haplotype, just concatenate" << endl
          << "                            REF/ALT strings (delimited by \":\")" << endl
+         << "    -g, --region            Region to process (chr:start-end, 1-based inclusive).  Will be " << endl
+         << "                            padded with window size. Rest of input will be written, just not" << endl
+         << "                            processed." << endl
          << endl
          << "Convert genotype-based phased alleles within --window-size into haplotype alleles." << endl
          << "Will break haplotype construction when encountering non-phased genotypes on input." << endl
@@ -38,12 +42,19 @@ bool isPhased(Variant& var) {
     return true;
 }
 
+bool inRegion(const Variant& var, const string& seqName, int start, int end, int win) {
+    return (seqName.empty() ||
+        (seqName == var.sequenceName && var.position >= start - win &&
+         (end < 0 || var.position <= end + win)));
+}
+
 int main(int argc, char** argv) {
 
     string vcfFileName;
     string fastaFileName;
     int windowsize = 30;
     bool onlyVariants = false;
+    string region;
 
     if (argc == 1)
         printSummary(argv);
@@ -58,12 +69,13 @@ int main(int argc, char** argv) {
                 {"window-size", required_argument, 0, 'w'},
                 {"reference", required_argument, 0, 'r'},
                 {"only-variants", no_argument, 0, 'o'},
+                {"region", required_argument, 0, 'g'},
                 {0, 0, 0, 0}
             };
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "how:r:",
+        c = getopt_long (argc, argv, "how:r:g:",
                          long_options, &option_index);
 
         if (c == -1)
@@ -83,6 +95,10 @@ int main(int argc, char** argv) {
             fastaFileName = string(optarg);
             break;
 
+        case 'g':
+            region = optarg;
+            break;
+
         case 'h':
             printSummary(argv);
             break;
@@ -95,6 +111,13 @@ int main(int argc, char** argv) {
         default:
             abort ();
         }
+    }
+
+    string startSeq;
+    int startPos = 0;
+    int stopPos = -1;
+    if (!region.empty()) {
+        parseRegion(region, startSeq, startPos, stopPos);
     }
 
     VariantCallFile variantFile;
@@ -145,7 +168,7 @@ int main(int argc, char** argv) {
                 cout << cluster.front() << endl;
                 cluster.clear();
             }
-        } else if (isPhased(var)) {
+        } else if (inRegion(var, startSeq, startPos, stopPos, windowsize) && isPhased(var)) {
             if (cluster.empty()
                 || cluster.back().sequenceName == var.sequenceName
                 && var.position - cluster.back().position + cluster.back().ref.size() - 1 <= windowsize) {
