@@ -52,7 +52,7 @@ void shift_mid_right(VariantAllele& a, VariantAllele& b) {
         b.alt = a.alt.substr(a.alt.size()-1,1) + b.alt;
         b.ref = a.ref.substr(a.ref.size()-1,1) + b.ref;
         a.alt = a.alt.substr(0,a.alt.size()-1);
-        a.ref = a.ref.substr(0,a.alt.size()-1);
+        a.ref = a.ref.substr(0,a.ref.size()-1);
         --b.position;
     } else {
         // a is pure indel

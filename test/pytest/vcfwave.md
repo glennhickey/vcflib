@@ -148,6 +148,17 @@ output in <a href="../data/regression/vcfwave_6.vcf">vcfwave_6.vcf</a>
 
 ```
 
+## Indels next to a mismatch
+
+An indel is given an anchor base from the allele next to it.  When that allele is a mismatch, the indel takes the mismatched base, and the mismatch is not reported again on its own.  Both haplotypes below change the first G and insert a repeat after it.  vcfwave used to also report the mismatch as a separate SNP: a second G>A for the first one, and a G>C that is not in the second one, where WFA had aligned the mismatch at the far end of the insertion:
+
+```python
+>>> sh("printf '##fileformat=VCFv4.2\\n#CHROM\\tPOS\\tID\\tREF\\tALT\\tQUAL\\tFILTER\\tINFO\\tFORMAT\\tS1\\nchr1\\t10\\tsnp_ins\\tGTTGCAGTACGATCGATGCATG\\tAGAGAGAGAGAGATTGCAGTACGATCGATGCATG\\t60\\tPASS\\t.\\tGT\\t0|1\\nchr1\\t10\\tsnp_ins2\\tGTTGCAGTACGATCGATGCATG\\tAACACACACACACTTGCAGTACGATCGATGCATG\\t60\\tPASS\\t.\\tGT\\t1|0\\n' | vcfwave | grep -v '^#' | cut -f1-5,10 | tr '\\t' ' '")
+chr1 10 snp_ins_1 G AGAGAGAGAGAGA 0|1
+chr1 10 snp_ins2_1 G AACACACACACAC 1|0
+
+```
+
 ## Inversions
 
 We can also handle inversions.
