@@ -86,8 +86,12 @@ set_package_properties(ZLIB PROPERTIES TYPE REQUIRED)
 find_package(Threads)
 set_package_properties(Threads PROPERTIES TYPE REQUIRED)
 
-pkg_check_modules(htslib IMPORTED_TARGET htslib)   # Optionally builds from contrib/
-pkg_check_modules(tabixpp IMPORTED_TARGET tabixpp) # Optionally builds from contrib/
+# A static binary always uses the included htslib (and so tabixpp), built without network
+# access below: a distro htslib links libcurl, whose own dependencies have no static libraries
+if (NOT BUILD_STATIC)
+  pkg_check_modules(htslib IMPORTED_TARGET htslib)   # Optionally builds from contrib/
+  pkg_check_modules(tabixpp IMPORTED_TARGET tabixpp) # Optionally builds from contrib/
+endif()
 
 # ---- Build switches
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ${ipo_supported})
@@ -360,10 +364,17 @@ if (htslib_LOCAL)
   include_directories(${htslib_LOCAL})
 
   set(flags "-O2 -g -fPIC")
+  if (BUILD_STATIC)
+    # no remote file access or plugins, so nothing to link beyond zlib, bzip2 and lzma
+    set(htslib_CONFIGURE ./configure --disable-libcurl --disable-gcs --disable-s3
+      --disable-plugins --without-libdeflate)
+  else()
+    set(htslib_CONFIGURE ./configure --disable-s3)
+  endif()
   ExternalProject_Add(htslib-EXT
     SOURCE_DIR "${CMAKE_SOURCE_DIR}/${htslib_LOCAL}"
     UPDATE_COMMAND autoreconf -i
-    CONFIGURE_COMMAND ./configure --disable-s3
+    CONFIGURE_COMMAND ${htslib_CONFIGURE}
     INSTALL_COMMAND ""
     BUILD_IN_SOURCE ON
     BUILD_COMMAND $(MAKE) CFLAGS=${flags} lib-static
@@ -393,8 +404,14 @@ endif(htslib_LOCAL)
 if(WFA_GITMODULE)
   message(STATUS "Using included libwfa")
   set(WFA_INCLUDE_DIRS ${WFA_LOCAL})
-  add_subdirectory(${WFA_LOCAL})
-  set(WFALIB wfa2) # pick up the wfa2 lib target from the included CMakeLists.txt
+  if (BUILD_STATIC)
+    # only build what the binaries link: the shared wfa2 cannot take a static libgomp
+    add_subdirectory(${WFA_LOCAL} EXCLUDE_FROM_ALL)
+    set(WFALIB wfa2_static)
+  else()
+    add_subdirectory(${WFA_LOCAL})
+    set(WFALIB wfa2) # pick up the wfa2 lib target from the included CMakeLists.txt
+  endif()
 else(WFA_GITMODULE)
   find_path(WFA_INCLUDE_DIRS wavefront/wfa.hpp PATH_SUFFIXES wfa2lib)
   find_library(WFALIB wfa2 wfa REQUIRED) # distro search for shared lib
@@ -442,7 +459,9 @@ endif (ZIG)
 
 if (htslib_LOCAL)
   target_link_libraries(vcflib htslib)
-  set(vcflib_LIBS curl deflate) # local build requires linking curl explicitly
+  if (NOT BUILD_STATIC) # the static build's htslib is configured without them
+    set(vcflib_LIBS curl deflate) # local build requires linking curl explicitly
+  endif()
 else ()
   target_link_libraries(vcflib PkgConfig::htslib)
   set(vcflib_LIBS hts)
@@ -584,7 +603,9 @@ if (ZIG)
   add_pydoctest(vcfcreatemulti)
 endif (ZIG)
 add_pydoctest(vcfputtogetheragain)
-add_pydoctest(vcf-std)
+if (NOT BUILD_STATIC_LIBS AND pybind11_FOUND) # it imports pyvcfstd
+  add_pydoctest(vcf-std)
+endif()
 add_pydoctest(vcfputtogetheragain-norm)
 add_pydoctest(vcfvalidate)
 
@@ -647,9 +668,9 @@ install(TARGETS vcflib
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-if(WFA_GITMODULE)
+if(WFA_GITMODULE AND NOT BUILD_STATIC) # a static build links it into the binaries
   install(TARGETS ${WFALIB} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-endif(WFA_GITMODULE)
+endif()
 
 install(FILES ${INCLUDES} DESTINATION include/vcflib)
 
