@@ -297,6 +297,7 @@ set(BINS
     vcfglbound
     vcfinfosummarize
     vcfcreatemulti
+    vcfleftshift
 )
 
 set(WFBINS # Introduce wavefront dependency
@@ -598,6 +599,7 @@ add_pydoctest(vcflib-api)
 add_pydoctest(vcf2tsv)
 add_pydoctest(vcfallelicprimitives)
 add_pydoctest(vcfwave)
+add_pydoctest(vcfleftshift)
 add_pydoctest(vcffilter)
 if (ZIG)
   add_pydoctest(vcfcreatemulti)
