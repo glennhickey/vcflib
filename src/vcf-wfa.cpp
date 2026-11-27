@@ -19,6 +19,58 @@
 
 namespace vcflib {
 
+// Give the pure indel v an anchor base from its neighbour q, which comes before it
+// (take_anchor_from_prev) or after it (take_anchor_from_next).  Whatever v takes from q
+// must leave q, or it is reported twice: a mismatched base would come out both on its
+// own and inside v.  The exception is a matched base: it can anchor more than one record,
+// and leaving it in q lets the next indel use it too.
+static bool is_empty_allele(const VariantAllele& a) {
+    return a.ref.empty() && a.alt.empty();
+}
+
+static void clear_allele(VariantAllele& a) {
+    a.ref.clear();
+    a.alt.clear();
+    a.position = 0;
+}
+
+static void take_anchor_from_prev(VariantAllele& q, VariantAllele& v) {
+    if (is_empty_allele(q)) {
+        // already merged into another allele: keep looking further back
+        return;
+    }
+    if (q.ref == q.alt) {
+        VariantAllele match = q;
+        shift_mid_right(match, v);
+    } else if (q.is_pure_indel() || q.ref.size() == q.alt.size()) {
+        // merge an indel whole, take one base of a mismatch
+        shift_mid_right(q, v);
+    } else {
+        // q is an indel that already took an anchor base: taking that base back would
+        // leave q unanchored, so take all of it
+        v.ref = q.ref + v.ref;
+        v.alt = q.alt + v.alt;
+        v.position = q.position;
+        clear_allele(q);
+    }
+}
+
+static void take_anchor_from_next(VariantAllele& v, VariantAllele& q) {
+    if (is_empty_allele(q)) {
+        return;
+    }
+    if (q.ref == q.alt) {
+        VariantAllele match = q;
+        shift_mid_left(v, match);
+    } else if (q.is_pure_indel() || q.ref.size() == q.alt.size()) {
+        shift_mid_left(v, q);
+    } else {
+        v.ref += q.ref;
+        v.alt += q.alt;
+        clear_allele(q);
+    }
+}
+
 // parsedAlternates returns a hash of 'ref' and a vector of alts. A
 // single record may be split into multiple records with new
 // 'refs'. In this function Smith-Waterman is used with padding on
@@ -280,9 +332,9 @@ map<string, pair<vector<VariantAllele>,bool> > WfaVariant::wfa_parsedAlternates(
                             while (j < variants.size()
                                 // stop when we have sequence in both ref or alt
                                 && v.is_pure_indel()) {
-                                auto q = variants[j++];
+                                auto& q = variants[j++];
                                 // merge with us
-                                shift_mid_left(v, q);
+                                take_anchor_from_next(v, q);
                             }
                             // panic if we reach the end of the variants
                             if (j == variants.size() && v.is_pure_indel()) {
@@ -297,11 +349,11 @@ map<string, pair<vector<VariantAllele>,bool> > WfaVariant::wfa_parsedAlternates(
                             while (j >= 0
                                 // stop when we have sequence in both ref or alt
                                 && v.is_pure_indel()) {
-                                auto q = variants[j--];
+                                auto& q = variants[j--];
                                 // move the middle base between the alleles
                                 // to be at the start of v
                                 // or merge if both are pure indels
-                                shift_mid_right(q, v);
+                                take_anchor_from_prev(q, v);
                             }
                             // panic if we reach the end of the variants
                             if (j <= 0 && v.is_pure_indel()) {
